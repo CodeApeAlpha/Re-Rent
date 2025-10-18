@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://d13b671458ce.ngrok-free.app';
+const API_BASE_URL = 'https://c307bfac7fff.ngrok-free.app';
 
 // Test endpoint
 export async function testBackend(): Promise<string> {
