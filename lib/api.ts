@@ -11,6 +11,31 @@ export async function testBackend(): Promise<string> {
   }
 }
 
+// Google Sign-In API
+export async function googleSignIn(googleData: GoogleSignInData): Promise<any> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/login/google`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(googleData),
+    });
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Google Sign-In
+export interface GoogleSignInData {
+  email: string;
+  accessToken: string;
+  role: string;
+}
+
 // Vehicle enlist
 export interface VehicleData {
   licencePlateNumber: string;
