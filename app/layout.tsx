@@ -38,6 +38,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Web Push" />
+        <script src="https://accounts.google.com/gsi/client" async defer></script>
       </head>
       <body className={inter.className}>{children}</body>
     </html>
