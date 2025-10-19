@@ -68,6 +68,8 @@ export interface Vehicle {
   features: string[] | null; // Added null possibility
   currentLocation: string | null; // Added null possibility
   available: boolean;
+  // Add image URL getter
+  getImageUrl: () => string;
 }
 
 export async function enlistVehicle(vehicleData: VehicleData): Promise<string> {

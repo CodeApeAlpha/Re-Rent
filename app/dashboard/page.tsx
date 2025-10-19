@@ -75,6 +75,11 @@ export default function Dashboard() {
     router.push('/');
   };
 
+  // Add this helper function to generate image URLs
+  const getVehicleImageUrl = (vehicleId: string) => {
+    return `${API_BASE_URL}/vehicle/display/${vehicleId}`;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -163,6 +168,19 @@ export default function Dashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {vehicles.map((vehicle) => (
                     <div key={vehicle.vehicleId} className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
+                      {/* Vehicle Image */}
+                      <div className="mb-4">
+                        <img
+                          src={getVehicleImageUrl(vehicle.vehicleId)}
+                          alt={`${vehicle.make} ${vehicle.model}`}
+                          className="w-full h-48 object-cover rounded-lg"
+                          onError={(e) => {
+                            // Fallback image if the API image fails to load
+                            e.currentTarget.src = '/next.png';
+                          }}
+                        />
+                      </div>
+                      
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="text-lg font-semibold text-gray-900">
                           {vehicle.make} {vehicle.model}
@@ -176,6 +194,7 @@ export default function Dashboard() {
                         </span>
                       </div>
                       
+                      {/* Rest of the vehicle details remain the same */}
                       <div className="space-y-2 text-sm text-gray-600">
                         <p><span className="font-medium">License:</span> {vehicle.licencePlateNumber}</p>
                         <p><span className="font-medium">Color:</span> {vehicle.colour}</p>
