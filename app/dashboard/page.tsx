@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getAllVehicles, Vehicle, addVehicle, AddVehicleData } from '../../lib/api';
+import { getAllVehicles, Vehicle, addVehicle, AddVehicleData, submitRentalRequest, RentalRequest, RentalResponse } from '../../lib/api';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -16,9 +16,18 @@ export default function Dashboard() {
   const [notifications, setNotifications] = useState<Set<string>>(new Set());
   const [showRentModal, setShowRentModal] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [rentalLoading, setRentalLoading] = useState(false);
+  const [rentalError, setRentalError] = useState<string | null>(null);
+  const [rentalSuccess, setRentalSuccess] = useState(false);
+  const [rentalForm, setRentalForm] = useState({
+    startDate: '',
+    endDate: '',
+    specialRequests: ''
+  });
   const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
   const [addVehicleLoading, setAddVehicleLoading] = useState(false);
   const [addVehicleError, setAddVehicleError] = useState<string | null>(null);
+  const [addVehicleSuccess, setAddVehicleSuccess] = useState(false);
   const API_BASE_URL = 'https://c307bfac7fff.ngrok-free.app';
 
   // Add Vehicle form data state
@@ -39,7 +48,7 @@ export default function Dashboard() {
     features: [] as string[],
     currentLocation: '',
     available: true,
-    image: [] as string[]
+    image: [] as File[]
   });
 
   useEffect(() => {
@@ -108,17 +117,58 @@ export default function Dashboard() {
     setShowRentModal(true);
   };
 
-  const handleConfirmRent = () => {
-    if (selectedVehicle) {
-      setRentRequests(prev => {
-        const newSet = new Set(prev);
-        newSet.add(selectedVehicle.vehicleId);
-        return newSet;
-      });
-      setShowRentModal(false);
-      setSelectedVehicle(null);
-      // Here you would typically send the rent request to your API
-      console.log('Rent request sent for:', selectedVehicle.vehicleId);
+  const handleConfirmRent = async () => {
+    if (!selectedVehicle) return;
+
+    setRentalLoading(true);
+    setRentalError(null);
+    setRentalSuccess(false);
+
+    try {
+      // Validate form data
+      if (!rentalForm.startDate || !rentalForm.endDate) {
+        throw new Error('Please select both start and end dates');
+      }
+
+      // Check if end date is after start date
+      if (new Date(rentalForm.endDate) <= new Date(rentalForm.startDate)) {
+        throw new Error('End date must be after start date');
+      }
+
+      const rentalData: RentalRequest = {
+        startDate: new Date(rentalForm.startDate).toISOString(),
+        endDate: new Date(rentalForm.endDate).toISOString(),
+        requestedBy: user?.email || '',
+        requestedDate: new Date().toISOString(),
+        vehicleId: selectedVehicle.vehicleId
+      };
+
+      const response = await submitRentalRequest(rentalData);
+      
+      if (response.statusCode === 0) {
+        // Success - update local state and close modal
+        setRentRequests(prev => {
+          const newSet = new Set(prev);
+          newSet.add(selectedVehicle.vehicleId);
+          return newSet;
+        });
+        setRentalSuccess(true);
+        setShowRentModal(false);
+        setSelectedVehicle(null);
+        setRentalForm({ startDate: '', endDate: '', specialRequests: '' });
+        
+        // Show success message for 4 seconds
+        setTimeout(() => {
+          setRentalSuccess(false);
+        }, 4000);
+      } else {
+        throw new Error(response.message || 'Failed to submit rental request');
+      }
+    } catch (error) {
+      setRentalError(error instanceof Error ? error.message : 'Failed to submit rental request');
+      console.error('Error submitting rental request:', error);
+    } finally {
+      setRentalLoading(false);
     }
   };
 
@@ -138,11 +188,18 @@ export default function Dashboard() {
   const handleAddVehicle = () => {
     setShowAddVehicleModal(true);
     setAddVehicleError(null);
+    setAddVehicleSuccess(false);
+    // Initialize with empty image array
+    setVehicleForm(prev => ({
+      ...prev,
+      image: []
+    }));
   };
 
   const handleCloseAddVehicleModal = () => {
     setShowAddVehicleModal(false);
     setAddVehicleError(null);
+    setAddVehicleSuccess(false);
     setVehicleForm({
       licencePlateNumber: '',
       vinNumber: '',
@@ -160,7 +217,7 @@ export default function Dashboard() {
       features: [],
       currentLocation: '',
       available: true,
-      image: []
+      image: [] // Reset to empty array
     });
   };
 
@@ -192,6 +249,27 @@ export default function Dashboard() {
     }));
   };
 
+  // File upload handlers
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const fileArray = Array.from(files);
+      setVehicleForm(prev => ({
+        ...prev,
+        image: [...prev.image, ...fileArray]
+      }));
+    }
+    // Reset the input value to allow selecting the same file again
+    event.target.value = '';
+  };
+
+  const handleRemoveImage = (index: number) => {
+    setVehicleForm(prev => ({
+      ...prev,
+      image: prev.image.filter((_, i) => i !== index)
+    }));
+  };
+
   const handleSubmitVehicle = async () => {
     setAddVehicleLoading(true);
     setAddVehicleError(null);
@@ -200,6 +278,17 @@ export default function Dashboard() {
       // Validate required fields
       if (!vehicleForm.licencePlateNumber || !vehicleForm.make || !vehicleForm.model) {
         throw new Error('Please fill in all required fields');
+      }
+
+      // Validate image requirement
+      if (!vehicleForm.image || vehicleForm.image.length === 0) {
+        throw new Error('Please upload at least one image of the vehicle');
+      }
+
+      // Filter out invalid files
+      const validImages = vehicleForm.image.filter(file => file instanceof File && file.size > 0);
+      if (validImages.length === 0) {
+        throw new Error('Please upload at least one valid image file of the vehicle');
       }
 
       const vehicleData: AddVehicleData = {
@@ -221,21 +310,30 @@ export default function Dashboard() {
           currentLocation: vehicleForm.currentLocation,
           available: vehicleForm.available
         },
-        image: vehicleForm.image
+        image: validImages
       };
 
       const response = await addVehicle(vehicleData);
       
-      if (response.statusCode === 200) {
-        // Success - close modal and refresh vehicles
-        handleCloseAddVehicleModal();
+      if (response.statusCode === 200 || response.statusCode === 204) {
+        // Success - show toast notification and refresh vehicles
+        setAddVehicleSuccess(true);
         loadVehicles(); // Refresh the vehicles list
-        alert('Vehicle added successfully!');
+        
+        // Auto-dismiss toast notification after 4 seconds
+        setTimeout(() => {
+          setAddVehicleSuccess(false);
+        }, 4000);
       } else {
         throw new Error(response.message || 'Failed to add vehicle');
       }
     } catch (error) {
       setAddVehicleError(error instanceof Error ? error.message : 'Failed to add vehicle');
+      
+      // Auto-dismiss error toast after 5 seconds
+      setTimeout(() => {
+        setAddVehicleError(null);
+      }, 5000);
     } finally {
       setAddVehicleLoading(false);
     }
@@ -360,63 +458,128 @@ export default function Dashboard() {
             </div>
             <h3 className="text-lg font-medium text-gray-900 mb-1">No vehicles yet</h3>
             <p className="text-gray-600 mb-4 text-sm">Start earning by adding your first vehicle</p>
-            <button className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors">
+            <button 
+              onClick={handleAddVehicle}
+              className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
               Add Your First Vehicle
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {vehicles.map((vehicle) => (
-              <div key={vehicle.vehicleId} className="bg-gray-50 rounded-lg p-4 hover:shadow-md transition-shadow border">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <img
-                      src={getVehicleImageUrl(vehicle.vehicleId)}
-                      alt={`${vehicle.make} ${vehicle.model}`}
-                      className="w-12 h-12 object-cover rounded-md"
-                      onError={(e) => {
-                        e.currentTarget.src = '/next.png';
-                      }}
-                    />
-                    <div>
-                      <h3 className="font-semibold text-sm">{vehicle.make} {vehicle.model}</h3>
-                      <p className="text-gray-600 text-xs">{vehicle.licencePlateNumber}</p>
+              <div key={vehicle.vehicleId} className="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden group border">
+                {/* Vehicle Image with Overlay */}
+                <div className="relative">
+                  <img
+                    src={getVehicleImageUrl(vehicle.vehicleId)}
+                    alt={`${vehicle.make} ${vehicle.model}`}
+                    className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
+                    onError={(e) => {
+                      e.currentTarget.src = '/next.png';
+                    }}
+                  />
+                  
+                  {/* Status Badge */}
+                  <div className="absolute top-2 left-2">
+                    <span className={`px-2 py-1 rounded-full text-xs font-semibold shadow-sm ${
+                      vehicle.available 
+                        ? 'bg-green-500 text-white' 
+                        : 'bg-red-500 text-white'
+                    }`}>
+                      {vehicle.available ? 'Available' : 'Unavailable'}
+                    </span>
+                  </div>
+
+                  {/* Earnings Indicator */}
+                  <div className="absolute top-2 right-2">
+                    <div className="bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm">
+                      <div className="text-xs font-bold text-green-600">
+                        ${vehicle.rentalPricePerDayUsd}/day
+                      </div>
                     </div>
                   </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    vehicle.available 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
-                  }`}>
-                    {vehicle.available ? 'Available' : 'Unavailable'}
-                  </span>
                 </div>
 
-                <div className="space-y-1 mb-3">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-600">Daily Rate:</span>
-                    <span className="font-medium">${vehicle.rentalPricePerDayUsd}</span>
+                {/* Vehicle Details */}
+                <div className="p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="text-lg font-bold text-gray-900">
+                      {vehicle.make} {vehicle.model}
+                    </h3>
+                    <div className="text-right">
+                      <div className="text-sm text-gray-500">License</div>
+                      <div className="text-xs font-medium text-gray-700">{vehicle.licencePlateNumber}</div>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-600">Mileage:</span>
-                    <span className="font-medium">{vehicle.mileage.toLocaleString()} km</span>
+                  
+                  {/* Key Details Grid */}
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="text-xs">
+                      <span className="text-gray-500">Color:</span>
+                      <div className="font-medium">{vehicle.colour}</div>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-gray-500">Transmission:</span>
+                      <div className="font-medium">{vehicle.transmission}</div>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-gray-500">Fuel:</span>
+                      <div className="font-medium">{vehicle.fuelType}</div>
+                    </div>
+                    <div className="text-xs">
+                      <span className="text-gray-500">Mileage:</span>
+                      <div className="font-medium">{vehicle.mileage.toLocaleString()} km</div>
+                    </div>
+                    <div className="text-xs col-span-2">
+                      <span className="text-gray-500">Location:</span>
+                      <div className="font-medium">{vehicle.currentLocation || 'Not specified'}</div>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-600">Location:</span>
-                    <span className="font-medium">{vehicle.currentLocation || 'Not set'}</span>
-                  </div>
-                </div>
 
-                <div className="flex gap-2">
-                  <button className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md text-xs font-medium hover:bg-blue-700 transition-colors">
-                    Manage
-                  </button>
-                  <button className="bg-gray-200 text-gray-700 py-2 px-3 rounded-md text-xs font-medium hover:bg-gray-300 transition-colors">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  </button>
+                  {/* Features */}
+                  {vehicle.features && vehicle.features.length > 0 && (
+                    <div className="mb-3">
+                      <div className="flex flex-wrap gap-1">
+                        {vehicle.features.slice(0, 2).map((feature, index) => (
+                          <span key={index} className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                            {feature}
+                          </span>
+                        ))}
+                        {vehicle.features.length > 2 && (
+                          <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-medium">
+                            +{vehicle.features.length - 2} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Deposit Info */}
+                  {vehicle.depositRequiredUsd > 0 && (
+                    <div className="mb-3 p-2 bg-yellow-50 rounded-md">
+                      <div className="text-xs text-yellow-800">
+                        <span className="font-medium">Deposit Required:</span> ${vehicle.depositRequiredUsd}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2">
+                    <button className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-1">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Manage
+                    </button>
+                    <button className="bg-gray-200 text-gray-700 py-2 px-3 rounded-md text-sm font-medium hover:bg-gray-300 transition-colors">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -794,6 +957,34 @@ export default function Dashboard() {
         </div>
       </nav>
 
+      {/* Success Notifications */}
+      {rentalSuccess && (
+        <div className="fixed top-20 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-slide-in">
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+          <span>Rental request submitted successfully!</span>
+        </div>
+      )}
+
+      {addVehicleSuccess && (
+        <div className="fixed top-20 right-4 z-[60] bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-slide-in">
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+          <span>Vehicle added successfully!</span>
+        </div>
+      )}
+
+      {addVehicleError && (
+        <div className="fixed top-20 right-4 z-[60] bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-slide-in">
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+          <span>{addVehicleError}</span>
+        </div>
+      )}
+
       {/* Dashboard Content */}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
@@ -839,6 +1030,18 @@ export default function Dashboard() {
                   </div>
                 </div>
 
+                {rentalError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                    <p className="text-red-600 text-sm">{rentalError}</p>
+                  </div>
+                )}
+
+                {rentalSuccess && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                    <p className="text-green-600 text-sm">Rental request submitted successfully! You'll be notified when the owner responds.</p>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -846,17 +1049,25 @@ export default function Dashboard() {
                     </label>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Start Date</label>
+                        <label className="block text-xs text-gray-500 mb-1">Start Date *</label>
                         <input
                           type="date"
+                          value={rentalForm.startDate}
+                          onChange={(e) => setRentalForm(prev => ({ ...prev, startDate: e.target.value }))}
+                          min={new Date().toISOString().split('T')[0]}
                           className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">End Date</label>
+                        <label className="block text-xs text-gray-500 mb-1">End Date *</label>
                         <input
                           type="date"
+                          value={rentalForm.endDate}
+                          onChange={(e) => setRentalForm(prev => ({ ...prev, endDate: e.target.value }))}
+                          min={rentalForm.startDate || new Date().toISOString().split('T')[0]}
                           className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
                         />
                       </div>
                     </div>
@@ -868,6 +1079,8 @@ export default function Dashboard() {
                     </label>
                     <textarea
                       placeholder="Any special requirements or notes..."
+                      value={rentalForm.specialRequests}
+                      onChange={(e) => setRentalForm(prev => ({ ...prev, specialRequests: e.target.value }))}
                       className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                       rows={3}
                     />
@@ -889,19 +1102,35 @@ export default function Dashboard() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowRentModal(false)}
-                  className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                  onClick={() => {
+                    setShowRentModal(false);
+                    setRentalForm({ startDate: '', endDate: '', specialRequests: '' });
+                    setRentalError(null);
+                    setRentalSuccess(false);
+                  }}
+                  disabled={rentalLoading}
+                  className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmRent}
-                  className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                  disabled={rentalLoading}
+                  className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
-                  Send Request
+                  {rentalLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      </svg>
+                      Send Request
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -926,11 +1155,6 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              {addVehicleError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                  <p className="text-red-600 text-sm">{addVehicleError}</p>
-                </div>
-              )}
 
               <div className="space-y-4">
                 {/* Basic Information */}
@@ -1078,6 +1302,51 @@ export default function Dashboard() {
                       placeholder="Airport, Hotel, Home"
                     />
                   </div>
+                </div>
+
+                {/* Vehicle Images */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Vehicle Images <span className="text-red-500">*</span>
+                  </label>
+                  
+                  {/* File Upload Input */}
+                  <div className="mb-4">
+                        <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Select one or more image files. Supported formats: JPG, PNG, GIF, WebP
+                    </p>
+                  </div>
+
+                  {/* Display Selected Images */}
+                  {vehicleForm.image.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-700">Selected Images:</p>
+                      {vehicleForm.image.map((file, index) => (
+                        <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded-md">
+                          <div className="flex-1">
+                            <p className="text-sm text-gray-700">{file.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {(file.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                          </div>
+                        <button
+                          type="button"
+                            onClick={() => handleRemoveImage(index)}
+                            className="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  )}
                 </div>
 
                 {/* Features */}

@@ -68,7 +68,7 @@ export interface AddVehicleData {
     currentLocation: string;
     available: boolean;
   };
-  image: string[];
+  image: File[];
 }
 
 export interface AddVehicleResponse {
@@ -123,21 +123,67 @@ export async function addVehicle(vehicleData: AddVehicleData): Promise<AddVehicl
   try {
     const token = localStorage.getItem('accessToken');
     
+    // Create FormData for multipart/form-data submission
+    const formData = new FormData();
+    
+    // Add vehicle data as JSON string with proper content type for @RequestPart
+    const vehicleBlob = new Blob([JSON.stringify(vehicleData.vehicle)], { type: 'application/json' });
+    formData.append('vehicle', vehicleBlob);
+    
+    // Add image files as multipart files
+    vehicleData.image.forEach((file, index) => {
+      if (file instanceof File) {
+        formData.append('image', file);
+      }
+    });
+    
     const response = await fetch(`${API_BASE_URL}/vehicle/enlist`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'ngrok-skip-browser-warning': 'true',
+        // Don't set Content-Type header - let browser set it with boundary
       },
-      body: JSON.stringify(vehicleData),
+      body: formData,
     });
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    // Handle different response statuses gracefully
+    if (response.status === 204) {
+      // 204 No Content - success with no response body
+      return {
+        statusCode: 204,
+        message: 'Vehicle enlisted successfully',
+        data: null
+      };
+    } else if (!response.ok) {
+      // Error responses
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
     }
     
-    const data = await response.json();
-    return data;
+    // Check if response is JSON before parsing
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        const data = await response.json();
+        return data;
+      } catch (parseError) {
+        // If JSON parsing fails, return success with status
+        return {
+          statusCode: response.status,
+          message: 'Vehicle enlisted successfully',
+          data: null
+        };
+      }
+    } else {
+      // If not JSON, return a success response
+      const textData = await response.text();
+      return {
+        statusCode: response.status,
+        message: textData || 'Vehicle enlisted successfully',
+        data: null
+      };
+    }
   } catch (error) {
     throw new Error(`Error adding vehicle: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
@@ -172,5 +218,93 @@ export async function getAllVehicles(): Promise<Vehicle[]> {
     return vehiclesData;
   } catch (error) {
     throw new Error(`Error retrieving vehicles: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Rental interfaces
+export interface RentalRequest {
+  startDate: string;
+  endDate: string;
+  requestedBy: string;
+  requestedDate: string;
+  vehicleId: string;
+}
+
+export interface RentalResponse {
+  statusCode: number;
+  message: string;
+  data: any;
+}
+
+// Submit rental request
+export async function submitRentalRequest(rentalData: RentalRequest): Promise<RentalResponse> {
+  try {
+    const token = localStorage.getItem('accessToken');
+    
+    const response = await fetch(`${API_BASE_URL}/rent/vehicle`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(rentalData),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Error submitting rental request: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Approve rental request (for owners)
+export async function approveRentalRequest(rentId: string): Promise<RentalResponse> {
+  try {
+    const token = localStorage.getItem('accessToken');
+    
+    const response = await fetch(`${API_BASE_URL}/rent/approve/${rentId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Error approving rental request: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Decline rental request (for owners)
+export async function declineRentalRequest(rentId: string): Promise<RentalResponse> {
+  try {
+    const token = localStorage.getItem('accessToken');
+    
+    const response = await fetch(`${API_BASE_URL}/rent/decline/${rentId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Error declining rental request: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
