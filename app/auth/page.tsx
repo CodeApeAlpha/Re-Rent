@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { googleSignIn, GoogleSignInData } from '../../lib/api';
 
 // Callback function to handle Google Sign-In response
-function callbackend(response: any, setAuthResult: (result: string) => void, setIsLoading: (loading: boolean) => void) {
+function callbackend(response: any, setAuthResult: (result: string) => void, setIsLoading: (loading: boolean) => void, role: string) {
   console.log('Google Sign-In response:', response);
   
   if (response.credential) {
@@ -21,7 +21,7 @@ function callbackend(response: any, setAuthResult: (result: string) => void, set
       const googleData: GoogleSignInData = {
         email: email,
         accessToken: accessToken,
-        role: 'user' // Default role, can be customized based on your logic
+        role: role // Use the selected role from dropdown
       };
       
       setIsLoading(true);
@@ -49,13 +49,59 @@ function callbackend(response: any, setAuthResult: (result: string) => void, set
 export default function AuthPage() {
   const [authResult, setAuthResult] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [selectedRole, setSelectedRole] = useState<string>('owner');
+  const selectedRoleRef = useRef(selectedRole);
 
-  // Make the callback function available globally
+  // Update ref when selectedRole changes
   useEffect(() => {
+    selectedRoleRef.current = selectedRole;
+  }, [selectedRole]);
+
+  // Initialize Google Sign-In programmatically
+  useEffect(() => {
+    // Register callback first
     (window as any).callbackend = (response: any) => {
-      callbackend(response, setAuthResult, setIsLoading);
+      callbackend(response, setAuthResult, setIsLoading, selectedRoleRef.current);
     };
-  }, []);
+
+    // Initialize Google Sign-In after callback is registered
+    const initializeGoogleSignIn = () => {
+      if (window.google && window.google.accounts) {
+        window.google.accounts.id.initialize({
+          client_id: "511958194055-ur4ksh5a79b7btap9pick8heh4tl5gu9.apps.googleusercontent.com",
+          callback: (window as any).callbackend,
+          auto_select: false,
+          cancel_on_tap_outside: true
+        });
+
+        // Render the button
+        const buttonContainer = document.getElementById('google-signin-button');
+        if (buttonContainer) {
+          window.google.accounts.id.renderButton(buttonContainer, {
+            theme: "outline",
+            size: "large",
+            type: "standard",
+            shape: "rectangular",
+            text: "signin_with",
+            logo_alignment: "left"
+          });
+        }
+      } else {
+        // If Google script hasn't loaded yet, wait and try again
+        setTimeout(initializeGoogleSignIn, 100);
+      }
+    };
+
+    // Start initialization
+    initializeGoogleSignIn();
+
+    // Cleanup function
+    return () => {
+      if (window.google && window.google.accounts) {
+        window.google.accounts.id.cancel();
+      }
+    };
+  }, []); // Empty dependency array - initialize once
   return (
     <main className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full space-y-8">
@@ -70,22 +116,23 @@ export default function AuthPage() {
         
         <div className="mt-8 space-y-6">
           <div className="bg-white p-8 rounded-lg shadow">
-            <div id="g_id_onload"
-                 data-client_id="511958194055-ur4ksh5a79b7btap9pick8heh4tl5gu9.apps.googleusercontent.com"
-                 data-context="signin"
-                 data-ux_mode="popup"
-                 data-callback="callbackend"
-                 data-auto_prompt="false">
+            {/* Role Selection Dropdown */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Your Role
+              </label>
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="owner">Owner</option>
+                <option value="renter">Renter</option>
+              </select>
             </div>
 
-            <div className="g_id_signin"
-                 data-type="standard"
-                 data-shape="rectangular"
-                 data-theme="outline"
-                 data-text="signin_with"
-                 data-size="large"
-                 data-logo_alignment="left">
-            </div>
+            {/* Google Sign-In button will be rendered here programmatically */}
+            <div id="google-signin-button" className="flex justify-center"></div>
             
             {/* Loading indicator */}
             {isLoading && (
