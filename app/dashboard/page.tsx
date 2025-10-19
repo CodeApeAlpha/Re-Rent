@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getAllVehicles, Vehicle, addVehicle, AddVehicleData, submitRentalRequest, RentalRequest, RentalResponse } from '../../lib/api';
+import { getAllVehicles, Vehicle, addVehicle, AddVehicleData, submitRentalRequest, RentalRequest, RentalResponse, getOwnerVehicles } from '../../lib/api';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -64,42 +64,39 @@ export default function Dashboard() {
 
     setUser({ email, role });
     setLoading(false);
-    
-    // Load vehicles after user is authenticated
-    loadVehicles();
   }, [router]);
+
+  // Load vehicles when user state changes
+  useEffect(() => {
+    if (user) {
+      loadVehicles();
+    }
+  }, [user]);
 
   const loadVehicles = async () => {
     setVehiclesLoading(true);
     setVehiclesError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/vehicle/retrieve/all`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      console.log('API Response:', result);
-      
-      // Handle the specific API response format
       let vehiclesData = [];
-      if (result.statusCode === 200 && Array.isArray(result.data)) {
-        vehiclesData = result.data;
+      
+      console.log('Loading vehicles for role:', user?.role);
+      
+      if (user?.role === 'owner') {
+        // Owners use the authenticated vehicles endpoint
+        console.log('Calling getOwnerVehicles...');
+        vehiclesData = await getOwnerVehicles();
+        console.log('Owner vehicles loaded:', vehiclesData);
       } else {
-        console.log('Unexpected API response format:', result);
-        vehiclesData = [];
+        // Renters use the public vehicles endpoint
+        console.log('Calling getAllVehicles...');
+        vehiclesData = await getAllVehicles();
+        console.log('All vehicles loaded:', vehiclesData);
       }
       
       setVehicles(vehiclesData);
     } catch (error) {
+      console.error('Error in loadVehicles:', error);
       setVehiclesError(error instanceof Error ? error.message : 'Failed to load vehicles');
-      console.error('Error loading vehicles:', error);
     } finally {
       setVehiclesLoading(false);
     }
@@ -316,9 +313,12 @@ export default function Dashboard() {
       const response = await addVehicle(vehicleData);
       
       if (response.statusCode === 200 || response.statusCode === 204) {
-        // Success - show toast notification and refresh vehicles
+        // Success - show toast notification, refresh vehicles, and close modal
         setAddVehicleSuccess(true);
         loadVehicles(); // Refresh the vehicles list
+        
+        // Close modal immediately on success
+        handleCloseAddVehicleModal();
         
         // Auto-dismiss toast notification after 4 seconds
         setTimeout(() => {
@@ -328,12 +328,23 @@ export default function Dashboard() {
         throw new Error(response.message || 'Failed to add vehicle');
       }
     } catch (error) {
-      setAddVehicleError(error instanceof Error ? error.message : 'Failed to add vehicle');
+      let userMessage = 'Failed to add vehicle';
       
-      // Auto-dismiss error toast after 5 seconds
-      setTimeout(() => {
-        setAddVehicleError(null);
-      }, 5000);
+      if (error instanceof Error) {
+        // Extract only the "message" field from backend JSON response
+        const jsonMatch = error.message.match(/\{.*\}/);
+        if (jsonMatch) {
+          try {
+            const errorData = JSON.parse(jsonMatch[0]);
+            userMessage = errorData.message || userMessage;
+          } catch {
+            userMessage = 'Failed to add vehicle';
+          }
+        }
+      }
+      
+      setAddVehicleError(userMessage);
+      setTimeout(() => setAddVehicleError(null), 5000);
     } finally {
       setAddVehicleLoading(false);
     }
@@ -458,43 +469,43 @@ export default function Dashboard() {
             </div>
             <h3 className="text-lg font-medium text-gray-900 mb-1">No vehicles yet</h3>
             <p className="text-gray-600 mb-4 text-sm">Start earning by adding your first vehicle</p>
-            <button 
+            {/* <button 
               onClick={handleAddVehicle}
               className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
             >
               Add Your First Vehicle
-            </button>
+            </button> */}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {vehicles.map((vehicle) => (
-              <div key={vehicle.vehicleId} className="bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden group border">
-                {/* Vehicle Image with Overlay */}
-                <div className="relative">
+              <div key={vehicle.vehicleId} className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group border border-gray-100">
+                {/* Vehicle Image */}
+                <div className="relative h-40">
                   <img
                     src={getVehicleImageUrl(vehicle.vehicleId)}
                     alt={`${vehicle.make} ${vehicle.model}`}
-                    className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     onError={(e) => {
                       e.currentTarget.src = '/next.png';
                     }}
                   />
                   
                   {/* Status Badge */}
-                  <div className="absolute top-2 left-2">
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold shadow-sm ${
+                  <div className="absolute top-3 left-3">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       vehicle.available 
-                        ? 'bg-green-500 text-white' 
+                        ? 'bg-emerald-500 text-white' 
                         : 'bg-red-500 text-white'
                     }`}>
                       {vehicle.available ? 'Available' : 'Unavailable'}
                     </span>
                   </div>
 
-                  {/* Earnings Indicator */}
-                  <div className="absolute top-2 right-2">
-                    <div className="bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md shadow-sm">
-                      <div className="text-xs font-bold text-green-600">
+                  {/* Price Badge */}
+                  <div className="absolute top-3 right-3">
+                    <div className="bg-white/95 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm">
+                      <div className="text-sm font-bold text-emerald-600">
                         ${vehicle.rentalPricePerDayUsd}/day
                       </div>
                     </div>
@@ -503,78 +514,62 @@ export default function Dashboard() {
 
                 {/* Vehicle Details */}
                 <div className="p-4">
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-lg font-bold text-gray-900">
+                  {/* Title and License */}
+                  <div className="flex justify-between items-start mb-3">
+                    <h3 className="text-lg font-semibold text-gray-900 truncate">
                       {vehicle.make} {vehicle.model}
                     </h3>
-                    <div className="text-right">
-                      <div className="text-sm text-gray-500">License</div>
-                      <div className="text-xs font-medium text-gray-700">{vehicle.licencePlateNumber}</div>
+                    <div className="text-right ml-2">
+                      <div className="text-xs text-gray-500">License</div>
+                      <div className="text-xs font-medium text-gray-600">{vehicle.licencePlateNumber}</div>
                     </div>
                   </div>
                   
-                  {/* Key Details Grid */}
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <div className="text-xs">
-                      <span className="text-gray-500">Color:</span>
-                      <div className="font-medium">{vehicle.colour}</div>
+                  {/* Key Info */}
+                  <div className="space-y-2 mb-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Color</span>
+                      <span className="font-medium text-gray-900">{vehicle.colour}</span>
                     </div>
-                    <div className="text-xs">
-                      <span className="text-gray-500">Transmission:</span>
-                      <div className="font-medium">{vehicle.transmission}</div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Transmission</span>
+                      <span className="font-medium text-gray-900">{vehicle.transmission}</span>
                     </div>
-                    <div className="text-xs">
-                      <span className="text-gray-500">Fuel:</span>
-                      <div className="font-medium">{vehicle.fuelType}</div>
-                    </div>
-                    <div className="text-xs">
-                      <span className="text-gray-500">Mileage:</span>
-                      <div className="font-medium">{vehicle.mileage.toLocaleString()} km</div>
-                    </div>
-                    <div className="text-xs col-span-2">
-                      <span className="text-gray-500">Location:</span>
-                      <div className="font-medium">{vehicle.currentLocation || 'Not specified'}</div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Mileage</span>
+                      <span className="font-medium text-gray-900">{vehicle.mileage.toLocaleString()} km</span>
                     </div>
                   </div>
 
                   {/* Features */}
                   {vehicle.features && vehicle.features.length > 0 && (
-                    <div className="mb-3">
+                    <div className="mb-4">
                       <div className="flex flex-wrap gap-1">
                         {vehicle.features.slice(0, 2).map((feature, index) => (
-                          <span key={index} className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                          <span key={index} className="bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-xs font-medium">
                             {feature}
                           </span>
                         ))}
                         {vehicle.features.length > 2 && (
-                          <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-medium">
-                            +{vehicle.features.length - 2} more
+                          <span className="bg-gray-50 text-gray-600 px-2 py-1 rounded-md text-xs font-medium">
+                            +{vehicle.features.length - 2}
                           </span>
                         )}
                       </div>
                     </div>
                   )}
 
-                  {/* Deposit Info */}
-                  {vehicle.depositRequiredUsd > 0 && (
-                    <div className="mb-3 p-2 bg-yellow-50 rounded-md">
-                      <div className="text-xs text-yellow-800">
-                        <span className="font-medium">Deposit Required:</span> ${vehicle.depositRequiredUsd}
-                      </div>
-                    </div>
-                  )}
-
                   {/* Action Buttons */}
                   <div className="flex gap-2">
-                    <button className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-1">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
                       Manage
                     </button>
-                    <button className="bg-gray-200 text-gray-700 py-2 px-3 rounded-md text-sm font-medium hover:bg-gray-300 transition-colors">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button className="bg-gray-100 text-gray-600 py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>

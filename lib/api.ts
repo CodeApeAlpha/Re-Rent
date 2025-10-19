@@ -185,11 +185,11 @@ export async function addVehicle(vehicleData: AddVehicleData): Promise<AddVehicl
       };
     }
   } catch (error) {
-    throw new Error(`Error adding vehicle: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Error adding vehicle`);
   }
 }
 
-// Retrieve all vehicles
+// Retrieve all vehicles (for renters)
 export async function getAllVehicles(): Promise<Vehicle[]> {
   try {
     const response = await fetch(`${API_BASE_URL}/vehicle/retrieve/all`, {
@@ -205,6 +205,41 @@ export async function getAllVehicles(): Promise<Vehicle[]> {
     
     const result = await response.json();
     console.log('API Response:', result);
+    
+    // Handle the specific API response format
+    let vehiclesData = [];
+    if (result.statusCode === 200 && Array.isArray(result.data)) {
+      vehiclesData = result.data;
+    } else {
+      console.log('Unexpected API response format:', result);
+      vehiclesData = [];
+    }
+    
+    return vehiclesData;
+  } catch (error) {
+    throw new Error(`Error retrieving vehicles: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Retrieve owner vehicles (for owners only)
+export async function getOwnerVehicles(): Promise<Vehicle[]> {
+  try {
+    const token = localStorage.getItem('accessToken');
+    
+    const response = await fetch(`${API_BASE_URL}/vehicle/retrieve`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    console.log('Owner Vehicles API Response:', result);
     
     // Handle the specific API response format
     let vehiclesData = [];
