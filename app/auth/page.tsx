@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { googleSignIn, GoogleSignInData } from '../../lib/api';
 
 // Callback function to handle Google Sign-In response
-function callbackend(response: any, setAuthResult: (result: string) => void, setIsLoading: (loading: boolean) => void, role: string, authType: string) {
+function callbackend(response: any, setAuthResult: (result: string) => void, setIsLoading: (loading: boolean) => void, role: string, authType: string, navigate: (path: string) => void) {
   console.log('Google Sign-In response:', response);
   
   if (response.credential) {
@@ -35,6 +36,16 @@ function callbackend(response: any, setAuthResult: (result: string) => void, set
           const action = authType === 'register' ? 'Registration' : 'Login';
           setAuthResult(`✅ ${action} successful! Status: ${result.statusCode}, Message: ${result.message}`);
           setIsLoading(false);
+          
+          // Store access token and user data
+          localStorage.setItem('accessToken', result.accessToken || accessToken);
+          localStorage.setItem('userRole', role);
+          localStorage.setItem('userEmail', email);
+          
+          // Navigate to dashboard after successful auth
+          setTimeout(() => {
+            navigate('/dashboard');
+          }, 1500);
         })
         .catch(error => {
           console.error('Auth failed:', error);
@@ -51,6 +62,7 @@ function callbackend(response: any, setAuthResult: (result: string) => void, set
 }
 
 export default function AuthPage() {
+  const router = useRouter();
   const [authResult, setAuthResult] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [selectedRole, setSelectedRole] = useState<string>('owner');
@@ -72,7 +84,7 @@ export default function AuthPage() {
   // Preload Google Sign-In in background
   useEffect(() => {
     const checkGoogleReady = () => {
-      if (window.google && window.google.accounts) {
+      if ((window as any).google && (window as any).google.accounts) {
         setIsGoogleReady(true);
         return true;
       }
@@ -106,11 +118,11 @@ export default function AuthPage() {
     if (currentStep === finalStep && isGoogleReady) {
       // Register callback
       (window as any).callbackend = (response: any) => {
-        callbackend(response, setAuthResult, setIsLoading, selectedRoleRef.current, authTypeRef.current);
+        callbackend(response, setAuthResult, setIsLoading, selectedRoleRef.current, authTypeRef.current, router.push);
       };
 
       // Initialize Google Sign-In
-      window.google.accounts.id.initialize({
+      (window as any).google.accounts.id.initialize({
         client_id: "511958194055-ur4ksh5a79b7btap9pick8heh4tl5gu9.apps.googleusercontent.com",
         callback: (window as any).callbackend,
         auto_select: false,
@@ -120,7 +132,7 @@ export default function AuthPage() {
       // Render the button
       const buttonContainer = document.getElementById('google-signin-button');
       if (buttonContainer) {
-        window.google.accounts.id.renderButton(buttonContainer, {
+        (window as any).google.accounts.id.renderButton(buttonContainer, {
           theme: "outline",
           size: "large",
           type: "standard",
@@ -133,8 +145,8 @@ export default function AuthPage() {
 
     return () => {
       const finalStep = authType === 'register' ? 3 : 2;
-      if (currentStep === finalStep && window.google && window.google.accounts) {
-        window.google.accounts.id.cancel();
+      if (currentStep === finalStep && (window as any).google && (window as any).google.accounts) {
+        (window as any).google.accounts.id.cancel();
       }
     };
   }, [currentStep, isGoogleReady, authType]);
@@ -201,9 +213,6 @@ export default function AuthPage() {
                 <Link href="/#how-it-works" className="text-gray-500 hover:text-blue-600 px-3 py-2 text-sm font-medium transition-colors">
                   How it Works
                 </Link>
-                <span className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                  Sign In
-                </span>
               </div>
             </div>
           </div>
