@@ -48,6 +48,35 @@ export interface VehicleData {
   mileage: number;
 }
 
+// Add Vehicle interfaces
+export interface AddVehicleData {
+  vehicle: {
+    licencePlateNumber: string;
+    vinNumber: string;
+    make: string;
+    model: string;
+    colour: string;
+    fuelType: string;
+    transmission: string;
+    mileage: number;
+    pickupOptions: string;
+    airConditioning: boolean;
+    rentalPricePerDayUsd: number;
+    depositRequiredUsd: number;
+    mileageLimitPerDayKm: number;
+    features: string[];
+    currentLocation: string;
+    available: boolean;
+  };
+  image: string[];
+}
+
+export interface AddVehicleResponse {
+  statusCode: number;
+  message: string;
+  data: any;
+}
+
 export interface Vehicle {
   vehicleId: string;
   licencePlateNumber: string;
@@ -86,6 +115,31 @@ export async function enlistVehicle(vehicleData: VehicleData): Promise<string> {
     return `Status: ${response.status}, Response: ${data}`;
   } catch (error) {
     throw new Error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Add Vehicle API function
+export async function addVehicle(vehicleData: AddVehicleData): Promise<AddVehicleResponse> {
+  try {
+    const token = localStorage.getItem('accessToken');
+    
+    const response = await fetch(`${API_BASE_URL}/vehicle/enlist`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(vehicleData),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Error adding vehicle: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
