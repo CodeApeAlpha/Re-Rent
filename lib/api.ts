@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://c307bfac7fff.ngrok-free.app';
+const API_BASE_URL = 'https://rerent-frosty-sound-2434.fly.dev';
 
 // Test endpoint
 export async function testBackend(): Promise<string> {

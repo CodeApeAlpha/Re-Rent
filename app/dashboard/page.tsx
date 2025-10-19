@@ -28,7 +28,7 @@ export default function Dashboard() {
   const [addVehicleLoading, setAddVehicleLoading] = useState(false);
   const [addVehicleError, setAddVehicleError] = useState<string | null>(null);
   const [addVehicleSuccess, setAddVehicleSuccess] = useState(false);
-  const API_BASE_URL = 'https://c307bfac7fff.ngrok-free.app';
+  const API_BASE_URL = 'https://rerent-frosty-sound-2434.fly.dev';
 
   // Add Vehicle form data state
   const [vehicleForm, setVehicleForm] = useState({
