@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:3001',
-      'https://rent-ready.netlify.app' 
+      'https://reant-ready.netlify.app/' 
       // Replace with your production domain
     ];
     if (!origin || !allowedOrigins.includes(origin)) {
